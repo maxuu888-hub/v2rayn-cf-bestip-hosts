@@ -1,5 +1,21 @@
 # v2rayn-cf-bestip-hosts
 
+## 一句话介绍 🚀
+
+还在为「优选 IP」手动改 v2rayN、删了又重新导入、改完还得记得改回来吗？😮‍💨
+这个小工具帮你把这件烦心事**全自动化**了：
+
+- 🏎️ 用 [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest) 自动跑一遍，挑出当下**最快的 Cloudflare 入口 IP**。
+- 🧩 给 **v2rayN / Xray** 节点填一个**固定的本地别名**（例如 `cf-up.example.local`），从此节点配置**写一次就不用再动**。
+- 🪟 真正变化的只有 **Windows hosts** 里那一行别名映射，工具自动维护，**绝不碰 v2rayN 的数据库**。
+- 🙅 不用再**手动反复导入节点**，SNI / Host 保持不变，TLS 与 CDN 路由稳稳的。
+- ⏰ 支持**定时任务自动切换**最优 IP，躺着就能一直用上快线路。
+- 🛟 每次更新 hosts 都会**自动带时间戳备份**，只改 `# BEGIN` / `# END` 标记之间的内容，**随时安全回滚**，不慌。
+
+> 如果它帮你省下了时间、也保住了头发 🧑‍🦲➡️🧑‍🦱，欢迎点个 ⭐ Star 支持一下，让更多人少走弯路！
+
+---
+
 Automatically pick the **best Cloudflare entry IP** for v2rayN / Xray on Windows,
 without ever touching the v2rayN database and without re-importing your node by hand.
 
