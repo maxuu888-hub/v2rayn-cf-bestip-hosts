@@ -1,0 +1,34 @@
+# Local, user-specific, or sensitive files -- never commit these.
+
+# Real config (copied from config.example.ps1)
+scripts/config.ps1
+
+# CloudflareSpeedTest binary and its data
+CloudflareST.exe
+CloudflareST
+*.exe
+
+# Candidate pools and speed-test results / history
+candidates.txt
+result.csv
+*.result.csv
+ip.txt
+history/
+results/
+
+# Hosts backups produced by update_hosts.ps1
+hosts.bak*
+*.hosts.bak
+backup/
+backups/
+
+# Logs
+*.log
+logs/
+
+# Editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,100 @@
+{
+  "_comment": "v2rayN custom config template for a VLESS + XHTTP node fronted by Cloudflare. The KEY IDEA: 'address' fields use STABLE LOCAL ALIASES (cf-up.example.local / cf-down.example.local) that this toolkit maps to the fastest Cloudflare IP via the Windows hosts file. The TLS serverName and HTTP Host headers use your REAL domain (up.example.com / down.example.com) and never change. Replace every YOUR-... placeholder, then paste this whole JSON into v2rayN as a custom-config node ONE TIME. Do not edit it again when the best IP changes; the hosts file does that for you.",
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "port": 10808,
+      "listen": "127.0.0.1",
+      "protocol": "socks",
+      "settings": {
+        "udp": true,
+        "auth": "noauth"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls"]
+      }
+    },
+    {
+      "tag": "http-in",
+      "port": 10809,
+      "listen": "127.0.0.1",
+      "protocol": "http"
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "cf-up.example.local",
+            "port": 443,
+            "users": [
+              {
+                "id": "YOUR-UUID-HERE",
+                "encryption": "none",
+                "flow": ""
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "up.example.com",
+          "allowInsecure": false,
+          "fingerprint": "chrome",
+          "alpn": ["h2", "http/1.1"]
+        },
+        "xhttpSettings": {
+          "host": "up.example.com",
+          "path": "/your-xhttp-path",
+          "mode": "auto",
+          "_comment_downloadSettings": "OPTIONAL split download path. Client support for downloadSettings varies by Xray-core version; remove this whole block if your core does not support it. It lets downloads use a different (also Cloudflare-fronted) alias/domain.",
+          "downloadSettings": {
+            "address": "cf-down.example.local",
+            "port": 443,
+            "network": "xhttp",
+            "security": "tls",
+            "tlsSettings": {
+              "serverName": "down.example.com",
+              "allowInsecure": false,
+              "fingerprint": "chrome",
+              "alpn": ["h2", "http/1.1"]
+            },
+            "xhttpSettings": {
+              "host": "down.example.com",
+              "path": "/your-xhttp-path",
+              "mode": "auto"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "direct"
+      }
+    ]
+  }
+}
