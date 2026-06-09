@@ -32,16 +32,22 @@ $Config = @{
     # CSV result file written by CloudflareST (the -o output file).
     ResultPath      = Join-Path $RepoRoot 'result.csv'
 
+    # Append-only history of chosen best IPs. Useful when status.ps1, live hosts,
+    # and scheduled-task timing need to be correlated.
+    HistoryPath     = Join-Path $RepoRoot 'output\history.csv'
+
     # ---- Stable local aliases -------------------------------------------
-    # These are the addresses you put in your Xray custom JSON. They never
-    # change; only their hosts-file mapping changes. Keep them as .local or
-    # any name you will never use for real DNS.
+    # These are the addresses you put in your Xray custom JSON. In the common
+    # split-XHTTP design, only UpAlias is used by default; the downlink stays on
+    # its real fixed host/CDN domain unless you intentionally manage DownAlias.
+    # Keep aliases as .local or any name you will never use for real DNS.
     UpAlias   = 'cf-up.example.local'
     DownAlias = 'cf-down.example.local'
 
-    # If your node uses a single address for both directions, set
-    # UseSeparateUpDown = $false and only UpAlias will be mapped.
-    UseSeparateUpDown = $true
+    # In the common XHTTP split design, only the uplink alias should be managed
+    # here and the downlink should stay on its real fixed host/CDN domain.
+    # Enable a separate down alias only if you intentionally manage that path.
+    UseSeparateUpDown = $false
 
     # ---- Windows hosts file ---------------------------------------------
     HostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
@@ -70,6 +76,11 @@ $Config = @{
     # Extra raw args passed straight to CloudflareST.exe for run_once.
     # Example: '-n 200 -t 4 -dn 10'
     ExtraArgsQuick = '-dd'
+
+    # Optional safety timeout for run_once.ps1. If CloudflareST has already
+    # produced result.csv but fails to exit cleanly, the script will stop the
+    # process after this many seconds and still parse the partial result.
+    QuickTimeoutSec = 45
 
     # Extra raw args for the weekly full-scan refresh.
     ExtraArgsWeekly = '-n 500 -t 4 -dn 20'

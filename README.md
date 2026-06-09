@@ -1,142 +1,217 @@
 # v2rayn-cf-bestip-hosts
 
-## 一句话介绍 🚀
-
-还在为「优选 IP」手动改 v2rayN、删了又重新导入、改完还得记得改回来吗？😮‍💨
-这个小工具帮你把这件烦心事**全自动化**了：
-
-- 🏎️ 用 [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest) 自动跑一遍，挑出当下**最快的 Cloudflare 入口 IP**。
-- 🧩 给 **v2rayN / Xray** 节点填一个**固定的本地别名**（例如 `cf-up.example.local`），从此节点配置**写一次就不用再动**。
-- 🪟 真正变化的只有 **Windows hosts** 里那一行别名映射，工具自动维护，**绝不碰 v2rayN 的数据库**。
-- 🙅 不用再**手动反复导入节点**，SNI / Host 保持不变，TLS 与 CDN 路由稳稳的。
-- ⏰ 支持**定时任务自动切换**最优 IP，躺着就能一直用上快线路。
-- 🛟 每次更新 hosts 都会**自动带时间戳备份**，只改 `# BEGIN` / `# END` 标记之间的内容，**随时安全回滚**，不慌。
-
-> 如果它帮你省下了时间、也保住了头发 🧑‍🦲➡️🧑‍🦱，欢迎点个 ⭐ Star 支持一下，让更多人少走弯路！
-
----
-
 Automatically pick the **best Cloudflare entry IP** for v2rayN / Xray on Windows,
-without ever touching the v2rayN database and without re-importing your node by hand.
+without touching the v2rayN database and without re-importing your node every time.
 
-## The core idea (read this first)
+## 一句话介绍
 
-A typical CDN-fronted Xray node (VLESS/VMess over WebSocket, gRPC, or XHTTP through
-Cloudflare) has three independent pieces:
+这个仓库解决的是一个很具体、也很常见的桌面场景：
 
-| Piece            | What it is                                   | Should it change often? |
-|------------------|----------------------------------------------|--------------------------|
-| **address**      | The IP/host Xray dials (the Cloudflare edge) | Yes — pick the fastest   |
-| **SNI / Host**   | TLS SNI and HTTP `Host` header (your domain) | No — must stay constant  |
-| **path / UUID**  | XHTTP path, user id, etc.                    | No                       |
+- **上行**：Xray / XHTTP 通过 Cloudflare 橙云入口，适合做 **best IP 自动优选**
+- **下行**：保持真实固定域名 / CDN（例如 CloudFront），**不跟着 Cloudflare best IP 一起改**
+- **客户端**：v2rayN 只在第一次导入自定义 JSON；后续自动化只改 Windows `hosts`
 
-Most "best IP" guides tell you to keep editing the node's `address` field to the
-fastest Cloudflare IP. In v2rayN that means editing the SQLite DB or deleting and
-re-importing the node every time the best IP changes. That is fragile and easy to
-get wrong.
+核心目标不是“反复生成新节点”，而是：
 
-**This toolkit decouples the address from the SNI/Host using the Windows `hosts`
-file.** You point Xray's `address` at a *stable local alias* such as
-`cf-up.example.local`, and the toolkit keeps a `hosts` entry mapping that alias to
-whatever Cloudflare IP is currently fastest:
+- 节点配置写一次
+- `address` 固定为本地 alias（如 `cf-up.example.local`）
+- 后台只更新 alias -> best IP 的 hosts 映射
+- 新连接自然吃到新的 Cloudflare 入口 IP
 
-```
-# Xray custom JSON (never changes):
-"address": "cf-up.example.local",   "serverName": "up.example.com"
+## What this toolkit actually automates
 
-# Windows hosts (the only thing that changes, managed automatically):
-104.16.0.1   cf-up.example.local
+This repo is the **hosts-mode** approach.
+
+It keeps the Xray node config stable and only rewrites the managed block in the
+Windows `hosts` file.
+
+```text
+Xray outbound address:  cf-up.example.local
+TLS serverName / Host:  up.example.com
+Windows hosts:          198.41.x.x  cf-up.example.local
 ```
 
 So:
 
-- **No v2rayN DB hacking.** The node config is written once and never edited again.
-- **No manual re-import.** Only the `hosts` file changes, between clearly marked
-  `# BEGIN`/`# END` markers, with an automatic timestamped backup each run.
-- **SNI/Host stay fixed**, so TLS and CDN routing keep working while only the entry
-  IP is optimized.
+- **No v2rayN DB hacking**
+- **No repeated node import**
+- **SNI / Host stay fixed**
+- **Only the dialed Cloudflare edge IP changes**
 
-The speed test itself is done by [XIU2/CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest)
-(`CloudflareST.exe`), which this toolkit drives and parses.
+## Important boundary: what it does NOT do
 
-## What it does, concretely
+This repo does **not** hot-reload v2rayN itself.
 
-1. `run_once.ps1` runs `CloudflareST.exe` against your candidate IP list.
-2. It parses the result CSV (English **or** Chinese headers, with a column fallback)
-   and chooses the best IP: zero packet loss first, then lowest latency, then
-   highest download speed.
-3. `update_hosts.ps1` (Admin) backs up `hosts`, rewrites only the marked block to
-   map `cf-up.example.local` / `cf-down.example.local` to the chosen IP(s), then
-   flushes the DNS cache.
-4. Optional scheduled tasks re-run the pick on a timer and refresh the candidate
-   pool weekly.
+That means:
+
+- **new connections** will use the newly chosen IP
+- **already-established long-lived connections** may keep using the old IP
+- if you want immediate pickup, **reconnect the node**
+
+So the honest description is:
+
+- **fully automatic hosts maintenance**
+- **not** a magical hot-reload of every already-open connection
+
+## v6 JSON-rewrite vs current hosts-mode
+
+Older “best IP” bundles often did this:
+
+- re-run CloudflareSpeedTest
+- rewrite `current-client.json`
+- rewrite `current-vless-*.txt`
+- expect the user or client to somehow pick up the change
+
+That is only **semi-automatic**.
+
+This repo is the newer **hosts-mode** design:
+
+- import the custom JSON **once**
+- keep `address` stable as a local alias
+- let scheduled automation update only the Windows `hosts` mapping
+
+See [docs/upgrade-from-json-rewrite.md](docs/upgrade-from-json-rewrite.md).
+
+## Target scenario: XHTTP split uplink / downlink
+
+The most important scenario for this repo is:
+
+```text
+uplink   -> Cloudflare domain / best IP optimized
+           up.example.com  +  cf-up.example.local -> best Cloudflare IP
+
+downlink -> fixed real host / CDN
+           down.example.com (for example CloudFront)
+```
+
+**Do not assume the downlink should follow the Cloudflare best IP.**
+
+In many real XHTTP split deployments, only the uplink is Cloudflare-optimized.
+The downlink should stay pinned to its own real fixed host.
 
 ## Quick start
 
 ```powershell
-# 1. Get CloudflareSpeedTest and put CloudflareST.exe somewhere stable.
+# 1. Get CloudflareSpeedTest and put CloudflareST.exe in the repo root.
 #    https://github.com/XIU2/CloudflareSpeedTest/releases
 
 # 2. Copy the example config and edit it for your setup.
 Copy-Item scripts\config.example.ps1 scripts\config.ps1
 notepad scripts\config.ps1
 
-# 3. Copy the candidate template and (optionally) refresh it.
+# 3. Copy the candidate template.
 Copy-Item templates\candidates.example.txt candidates.txt
 
-# 4. Build your Xray custom JSON from the template, using the LOCAL ALIASES
-#    cf-up.example.local / cf-down.example.local as the address fields, and
-#    paste it into v2rayN as a custom config node (one time only).
+# 4. Build your Xray custom JSON from the template and import it into v2rayN ONCE.
+#    For the common split design:
+#    - uplink address = cf-up.example.local
+#    - downlink address = your real fixed down host (for example down.example.com)
 
-# 5. Run once (an elevated PowerShell is required for the hosts update step).
+# 5. Run once (Admin PowerShell required for hosts update).
 powershell -ExecutionPolicy Bypass -File scripts\run_once.ps1
 
-# 6. (Optional) install scheduled tasks.
+# 6. Optional: install scheduled tasks.
 powershell -ExecutionPolicy Bypass -File scripts\install_all_tasks.ps1
 ```
 
-Then in v2rayN: connect to your custom node as usual. To pick up a freshly chosen
-IP on an existing connection, reconnect (see Limitations).
+Recommended desktop schedule:
+
+- daily pick: **every 24 hours**
+- weekly candidate refresh: **Sunday 04:00**
+
+## Verification / acceptance
+
+Do not rely on a single bare `curl.exe` test.
+
+The practical verification order is:
+
+1. `powershell -ExecutionPolicy Bypass -File scripts\status.ps1`
+2. inspect the live hosts block
+3. confirm alias resolution with PowerShell
+4. test the exit IP through an **explicit proxy**
+
+Recommended exit-IP check (replace `10809` if your local **HTTP** proxy port differs):
+
+```powershell
+curl.exe -4 -x http://127.0.0.1:10809 https://api.ipify.org
+```
+
+If that returns your node's real exit IP, the chain is working.
+
+Important: on some Windows setups, this may fail even when system proxy is enabled:
+
+```powershell
+curl.exe -4 https://api.ipify.org
+curl: (35) Recv failure: Connection was aborted
+```
+
+That **does not automatically mean the node is broken**.
+Use the explicit HTTP-proxy form first, for example:
+
+```powershell
+curl.exe -4 -x http://127.0.0.1:10809 https://api.ipify.org
+```
+
+See [docs/verification.md](docs/verification.md).
 
 ## Repo layout
 
-```
+```text
 scripts/
-  config.example.ps1            # copy to config.ps1 and edit
-  run_once.ps1                  # speed test -> pick best IP -> update hosts
-  update_hosts.ps1             # safe, marked, backed-up hosts update (Admin)
-  weekly_refresh_candidates.ps1 # refresh candidate pool (full scan)
-  install_task.ps1              # scheduled task: periodic best-IP pick
-  install_weekly_task.ps1       # scheduled task: weekly candidate refresh
-  install_all_tasks.ps1         # install both
-  uninstall_task.ps1            # remove the best-IP task
-  uninstall_weekly_task.ps1     # remove the weekly task
-  status.ps1                    # show task status + current hosts block + last result
+  config.example.ps1
+  run_once.ps1
+  update_hosts.ps1
+  weekly_refresh_candidates.ps1
+  install_task.ps1
+  install_weekly_task.ps1
+  install_all_tasks.ps1
+  uninstall_task.ps1
+  uninstall_weekly_task.ps1
+  status.ps1
+
 templates/
-  candidates.example.txt        # example Cloudflare IP/CIDR candidate list
-  v2rayn-custom-xhttp-template.json  # Xray custom JSON using local aliases
+  candidates.example.txt
+  v2rayn-custom-xhttp-template.json
+
 docs/
   architecture.md
+  verification.md
   troubleshooting.md
   security-and-rollback.md
   shadowrocket-limitations.md
+  upgrade-from-json-rewrite.md
 ```
 
-## Limitations (please read)
+## Troubleshooting highlights
 
-- This optimizes the **Cloudflare entry IP** you connect to. It does **not** change
-  your final exit IP or geo-location — that is decided by your node/server.
-- Already-established long-lived connections keep using the old IP; **reconnect** to
-  use a newly chosen one.
+A few real-world pitfalls worth calling out explicitly:
+
+- **CloudflareST timeout is not always fatal.** If `result.csv` has already been
+  written, a timeout-kill + later parse may still produce a valid best IP. If no
+  CSV was written yet, the run can still fail.
+- **PowerShell mojibake / garbled Chinese output does not automatically invalidate
+  the result.** Check `result.csv`, the hosts block, and history instead.
+- **`status.ps1` is a snapshot, not the only source of truth.** If it disagrees with
+  live hosts, check `output/history.csv` and `Get-ScheduledTaskInfo` as well.
+- **Xray `wsasend ... aborted` is not automatically a node failure** if real traffic is
+  still flowing and latency is normal.
+
+See [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## Limitations
+
+- This optimizes the **Cloudflare entry IP** you dial. It does **not** change your
+  final exit IP or geo-location.
 - **Admin rights are required** to edit `hosts` and flush DNS.
-- **Shadowrocket cannot import a full Xray JSON config**, so the local-alias trick
-  does not transfer there. See [docs/shadowrocket-limitations.md](docs/shadowrocket-limitations.md).
+- **Shadowrocket cannot import a full Xray JSON config**, so the local-alias trick is
+  not portable there. See [docs/shadowrocket-limitations.md](docs/shadowrocket-limitations.md).
 - **XHTTP `downloadSettings` client support varies** by core version.
-- **Reality nodes cannot be fronted by Cloudflare's orange-cloud proxy**, so this
-  best-IP approach does not apply to Reality.
+- **Reality cannot be fronted by Cloudflare orange-cloud**, so this approach does not
+  apply to Reality nodes.
 
-See [docs/troubleshooting.md](docs/troubleshooting.md) and
-[docs/security-and-rollback.md](docs/security-and-rollback.md) for more.
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

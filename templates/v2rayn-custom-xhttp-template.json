@@ -1,5 +1,5 @@
 {
-  "_comment": "v2rayN custom config template for a VLESS + XHTTP node fronted by Cloudflare. The KEY IDEA: 'address' fields use STABLE LOCAL ALIASES (cf-up.example.local / cf-down.example.local) that this toolkit maps to the fastest Cloudflare IP via the Windows hosts file. The TLS serverName and HTTP Host headers use your REAL domain (up.example.com / down.example.com) and never change. Replace every YOUR-... placeholder, then paste this whole JSON into v2rayN as a custom-config node ONE TIME. Do not edit it again when the best IP changes; the hosts file does that for you.",
+  "_comment": "v2rayN custom config template for a VLESS + XHTTP node with Cloudflare-optimized uplink. The KEY IDEA: the uplink 'address' uses a STABLE LOCAL ALIAS (cf-up.example.local) that this toolkit maps to the fastest Cloudflare IP via the Windows hosts file. The downlink can stay on its REAL fixed host/CDN domain (for example CloudFront) and should not be tied to the Cloudflare best IP. The TLS serverName and HTTP Host headers use your REAL domains and never change. Replace every YOUR-... placeholder, then paste this whole JSON into v2rayN as a custom-config node ONE TIME. Do not edit it again when the best IP changes; the hosts file does that for you.",
   "log": {
     "loglevel": "warning"
   },
@@ -57,9 +57,9 @@
           "host": "up.example.com",
           "path": "/your-xhttp-path",
           "mode": "auto",
-          "_comment_downloadSettings": "OPTIONAL split download path. Client support for downloadSettings varies by Xray-core version; remove this whole block if your core does not support it. It lets downloads use a different (also Cloudflare-fronted) alias/domain.",
+          "_comment_downloadSettings": "OPTIONAL split download path. Client support for downloadSettings varies by Xray-core version; remove this whole block if your core does not support it. In the common XHTTP split design, leave the downlink on its real fixed host/CDN domain instead of another local alias.",
           "downloadSettings": {
-            "address": "cf-down.example.local",
+            "address": "down.example.com",
             "port": 443,
             "network": "xhttp",
             "security": "tls",

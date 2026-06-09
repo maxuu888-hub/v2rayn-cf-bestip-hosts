@@ -7,11 +7,11 @@
 #
 # Usage:
 #   (elevated) powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1
-#   ... -IntervalHours 6
+#   ... -IntervalHours 24
 
 [CmdletBinding()]
 param(
-    [int] $IntervalHours = 6
+    [int] $IntervalHours = 24
 )
 
 $ErrorActionPreference = 'Stop'

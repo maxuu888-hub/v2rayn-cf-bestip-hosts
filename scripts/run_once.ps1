@@ -3,7 +3,7 @@
 #
 # One-shot: run CloudflareST against the candidate list, parse the result CSV,
 # choose the best IP (zero loss first, then lowest latency, then highest speed),
-# and hand it to update_hosts.ps1.
+# append a history row, and hand the uplink result to update_hosts.ps1.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts\run_once.ps1
@@ -54,9 +54,41 @@ if (-not $SkipTest) {
 
     Write-Host "[test] running CloudflareST..."
     Write-Host "[test] $($Config.CloudflareSTExe) $($cfArgs -join ' ')"
-    & $Config.CloudflareSTExe @cfArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "CloudflareST exited with code $LASTEXITCODE; will still try to parse $($Config.ResultPath)."
+
+    $argList = @()
+    foreach ($arg in $cfArgs) {
+        if ($arg -match '\s') {
+            $argList += ('"{0}"' -f $arg.Replace('"', '""'))
+        } else {
+            $argList += $arg
+        }
+    }
+
+    $p = Start-Process -FilePath $Config.CloudflareSTExe -ArgumentList $argList -PassThru -NoNewWindow
+    $timeoutSec = 0
+    if ($Config.ContainsKey('QuickTimeoutSec') -and $Config.QuickTimeoutSec) {
+        $timeoutSec = [int] $Config.QuickTimeoutSec
+    }
+
+    if ($timeoutSec -gt 0) {
+        $finished = $p.WaitForExit($timeoutSec * 1000)
+        if (-not $finished) {
+            Write-Warning "CloudflareST timed out after $timeoutSec seconds; stopping the process and parsing any partial result CSV."
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction Stop
+            } catch {
+                Write-Warning "Could not stop CloudflareST cleanly: $($_.Exception.Message)"
+            }
+        } else {
+            $LASTEXITCODE = $p.ExitCode
+        }
+    } else {
+        $p.WaitForExit()
+        $LASTEXITCODE = $p.ExitCode
+    }
+
+    if ($p.HasExited -and $p.ExitCode -ne 0) {
+        Write-Warning "CloudflareST exited with code $($p.ExitCode); will still try to parse $($Config.ResultPath)."
     }
 }
 
@@ -141,11 +173,27 @@ if ($top.Count -gt 1) {
     }
 }
 
+# ---- Append history ----------------------------------------------------------
+if ($Config.ContainsKey('HistoryPath') -and $Config.HistoryPath) {
+    $historyPath = $Config.HistoryPath
+    $historyDir = Split-Path -Parent $historyPath
+    if ($historyDir -and -not (Test-Path $historyDir)) {
+        New-Item -ItemType Directory -Path $historyDir -Force | Out-Null
+    }
+    if (-not (Test-Path $historyPath)) {
+        'time,best_ip,raw_row' | Set-Content -LiteralPath $historyPath -Encoding UTF8
+    }
+    $rawRow = ('{0},{1},{2},{3}' -f $best.Ip, $best.Loss, $best.Latency, $best.Speed)
+    $line = '{0},{1},"{2}"' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $best.Ip, $rawRow
+    Add-Content -LiteralPath $historyPath -Value $line -Encoding UTF8
+    Write-Host "[history] appended -> $historyPath"
+}
+
 # ---- Update hosts ------------------------------------------------------------
 if ($WhatIfHosts) {
-    Write-Host "[whatif] would map $($Config.UpAlias) (and down alias) -> $($best.Ip); hosts not modified."
+    Write-Host "[whatif] would map uplink alias $($Config.UpAlias) -> $($best.Ip); hosts not modified."
     return
 }
 
 $updateScript = Join-Path $ScriptDir 'update_hosts.ps1'
-& $updateScript -UpIp $best.Ip -DownIp $best.Ip
+& $updateScript -UpIp $best.Ip

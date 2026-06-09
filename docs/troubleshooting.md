@@ -1,59 +1,113 @@
 # Troubleshooting
 
-## The pick runs but my connection is still slow / unchanged
+## The pick ran, but the connection still seems unchanged
 
-- **Reconnect the node.** Existing connections keep using the old edge IP. Disconnect
-  and reconnect in v2rayN so Xray re-resolves the alias.
-- Confirm the alias actually resolves to the new IP:
+- **Reconnect the node.** Existing long-lived connections may continue using the old
+  edge IP until a new connection is opened.
+- Check the live hosts block directly:
   ```powershell
-  Resolve-DnsName cf-up.example.local
-  # or
-  ping cf-up.example.local
+  Get-Content C:\Windows\System32\drivers\etc\hosts | Select-String 'cf-up|cf-down'
   ```
-- Run `scripts\status.ps1` and check the managed hosts block shows the expected IP.
+- Check alias resolution:
+  ```powershell
+  [System.Net.Dns]::GetHostAddresses("cf-up.example.local")
+  ```
+- Then verify the exit IP through an explicit proxy:
+  ```powershell
+  curl.exe -4 -x http://127.0.0.1:10809 https://api.ipify.org
+  ```
 
-## "Administrator rights are required"
+## Bare curl says `(35) Recv failure: Connection was aborted`
 
-`update_hosts.ps1` and the `install_*` scripts must run from an **elevated**
-PowerShell. Right-click PowerShell -> "Run as administrator", then re-run.
+Example:
 
-## CloudflareST produces no usable IPs / empty result.csv
-
-- Your thresholds may be too strict. In `config.ps1`, raise `LatencyMaxMs` and/or
-  lower `SpeedMinMBps` (set it to `0` to disable the speed filter).
-- If the speed filter is on, `TestUrl` must point at a real, reasonably large file
-  served through *your* Cloudflare domain. A 404 or tiny file makes every IP fail
-  the speed gate.
-- Try a smaller candidate pool first to confirm the binary runs at all.
-
-## Column parsing picked the wrong field
-
-`run_once.ps1` matches CSV columns by keyword (English and Chinese) and falls back to
-the first column for the IP. If your CloudflareST build uses unusual headers, the
-parse line it prints (`[parse] columns -> ...`) tells you what it chose. Open
-`result.csv`, check the header row, and if needed adjust the keyword lists in
-`run_once.ps1` (function `Find-Column`).
-
-## PowerShell script encoding / garbled characters
-
-All scripts use ASCII-only comments specifically to avoid Windows PowerShell 5.1
-mangling non-ASCII text. If you edit a script, save it as ANSI/ASCII or UTF-8
-**without BOM**, and keep comments ASCII to stay safe on 5.1.
-
-## Execution policy blocks the script
-
-Run with an explicit bypass for that process only:
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_once.ps1
+curl.exe -4 https://api.ipify.org
+curl: (35) Recv failure: Connection was aborted
 ```
 
-## Scheduled task shows a non-zero last result
+Do **not** treat that as a final failure verdict by itself.
 
-Open Task Scheduler -> find `v2rayn-cf-bestip-hosts - pick best IP` -> History, or run
-`scripts\status.ps1`. Common causes: CloudflareST path wrong in `config.ps1`, no
-candidates file, or thresholds too strict. The task runs as SYSTEM, so paths must be
-absolute/resolvable for that account (the config derives them from the repo root,
-which is fine as long as the repo location is stable).
+On some Windows + v2rayN setups, bare `curl.exe` does not behave the same way as an
+explicit proxy test.
+
+Try this first (replace `10809` if your local HTTP proxy port differs):
+
+```powershell
+curl.exe -4 -x http://127.0.0.1:10809 https://api.ipify.org
+```
+
+If the explicit-proxy form returns the expected exit IP, the node path is working.
+
+## `status.ps1` shows one IP, but live hosts shows another
+
+That can happen legitimately when a scheduled task runs between your checks.
+
+When investigating, trust this order:
+
+1. live hosts block
+2. `output/history.csv`
+3. `Get-ScheduledTaskInfo`
+4. `status.ps1` snapshot
+
+## CloudflareST times out after ~45 seconds
+
+In real deployments, CloudflareST may already have produced a useful `result.csv` but
+fail to exit quickly.
+
+Current scripts support a safety timeout for this case:
+
+- the process can be stopped after the configured timeout
+- if `result.csv` was already written, the script can still parse and continue
+- if no CSV was written yet, the run can still fail
+
+So timeout-kill does **not always mean failure**, but it is not a guaranteed rescue
+path either.
+
+## CloudflareST produced garbled Chinese output in PowerShell
+
+PowerShell 5.1 console mojibake is annoying, but it does **not automatically mean the
+measurement is invalid**.
+
+Check these instead:
+
+- `result.csv`
+- the managed hosts block
+- `output/history.csv`
+
+Those are more trustworthy than console glyph rendering.
+
+## `wsasend: An established connection was aborted by the software in your host machine`
+
+If you see this in Xray logs, do **not** immediately conclude that the remote node is
+broken.
+
+When this warning appears together with:
+
+- successful real traffic to normal destinations
+- normal delay / ping values
+- a correct explicit-proxy exit IP check
+
+it is often just a local client / browser / app-side disconnect, not an upstream node
+failure.
+
+## `Administrator rights are required`
+
+`update_hosts.ps1` and the install scripts must run from an **elevated** PowerShell.
+
+Re-run PowerShell as Administrator.
+
+## `result.csv` is empty or no usable IPs were picked
+
+- thresholds may be too strict
+- candidate pool may be poor
+- your test URL may be unsuitable for the chosen probe mode
+
+Try:
+
+- raising `LatencyMaxMs`
+- lowering `SpeedMinMBps`
+- testing a smaller known-good candidate pool first
 
 ## I want to undo everything
 

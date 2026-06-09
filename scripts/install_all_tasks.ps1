@@ -9,7 +9,7 @@
 
 [CmdletBinding()]
 param(
-    [int]    $IntervalHours = 6,
+    [int]    $IntervalHours = 24,
     [string] $DayOfWeek     = 'Sunday',
     [string] $At            = '04:00'
 )

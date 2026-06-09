@@ -74,3 +74,19 @@ if (Test-Path $Config.ResultPath) {
 } else {
     Write-Host ("  no result file at {0}" -f $Config.ResultPath)
 }
+
+Write-Host ""
+Write-Host "==== History ===="
+if ($Config.ContainsKey('HistoryPath') -and (Test-Path $Config.HistoryPath)) {
+    $historyItem = Get-Item -LiteralPath $Config.HistoryPath
+    Write-Host ("  file     : {0}" -f $historyItem.FullName)
+    Write-Host ("  modified : {0}" -f $historyItem.LastWriteTime)
+    $historyLines = @(Get-Content -LiteralPath $Config.HistoryPath -Encoding UTF8)
+    if ($historyLines.Count -gt 0) {
+        $historyLines | Select-Object -Last 5 | ForEach-Object { Write-Host ("  {0}" -f $_) }
+    } else {
+        Write-Host "  (history file is empty)"
+    }
+} else {
+    Write-Host "  (no history file configured yet)"
+}

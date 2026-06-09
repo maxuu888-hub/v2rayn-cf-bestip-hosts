@@ -1,8 +1,8 @@
 # update_hosts.ps1
 # ASCII-only comments to avoid PowerShell 5.1 encoding problems.
 #
-# Safely update the Windows hosts file so the stable local aliases point at the
-# chosen Cloudflare IP(s). This script:
+# Safely update the Windows hosts file so the stable local alias(es) point at the
+# chosen IP(s). This script:
 #   - requires Administrator,
 #   - backs up hosts with a timestamp before changing anything,
 #   - rewrites ONLY the block between the BEGIN / END markers,
@@ -10,8 +10,8 @@
 #
 # Usage:
 #   .\update_hosts.ps1 -UpIp <ip> [-DownIp <ip>]
-# If -DownIp is omitted, UpIp is used for both (or only the up alias is written
-# when UseSeparateUpDown is $false).
+# If -DownIp is omitted, only the up alias is updated unless you intentionally
+# pass a separate downlink IP.
 
 [CmdletBinding()]
 param(
@@ -48,7 +48,6 @@ function Test-IsIp([string] $value) {
 }
 if (-not (Test-IsIp $UpIp)) { throw "UpIp '$UpIp' is not a valid IP address." }
 if ($DownIp -and -not (Test-IsIp $DownIp)) { throw "DownIp '$DownIp' is not a valid IP address." }
-if (-not $DownIp) { $DownIp = $UpIp }
 
 $hostsPath   = $Config.HostsPath
 $beginMarker = $Config.BeginMarker
@@ -67,7 +66,7 @@ $managedLines = New-Object System.Collections.Generic.List[string]
 $managedLines.Add($beginMarker)
 $managedLines.Add("# Updated: $stamp")
 $managedLines.Add(("{0}`t{1}" -f $UpIp, $Config.UpAlias))
-if ($Config.UseSeparateUpDown) {
+if ($Config.UseSeparateUpDown -and $DownIp) {
     $managedLines.Add(("{0}`t{1}" -f $DownIp, $Config.DownAlias))
 }
 $managedLines.Add($endMarker)
@@ -102,7 +101,11 @@ if ($found) {
     Write-Host "[hosts] added new managed block."
 }
 Write-Host "[hosts] $($Config.UpAlias) -> $UpIp"
-if ($Config.UseSeparateUpDown) { Write-Host "[hosts] $($Config.DownAlias) -> $DownIp" }
+if ($Config.UseSeparateUpDown -and $DownIp) {
+    Write-Host "[hosts] $($Config.DownAlias) -> $DownIp"
+} elseif ($Config.UseSeparateUpDown -and -not $DownIp) {
+    Write-Warning "UseSeparateUpDown is enabled but no DownIp was provided; only the uplink alias was updated."
+}
 
 # ---- Flush DNS ---------------------------------------------------------------
 try {
